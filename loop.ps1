@@ -2,6 +2,11 @@ $MaxBeats = 6
 $progressFile = "progress.md"
 $fixesFile = "fixes-applied.txt"
 
+$bugNames = @("add", "subtract", "multiply")
+$bugBefore = @("a - b", "a + b", "a / b")
+$bugAfter = @("a + b", "a - b", "a * b")
+$TotalBugs = $bugNames.Count
+
 $startedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 if (-not (Test-Path $progressFile)) {
@@ -10,6 +15,7 @@ if (-not (Test-Path $progressFile)) {
 
 $passed = $false
 $try = 0
+$beatLines = @()
 
 for ($i = 1; $i -le $MaxBeats; $i++) {
     $try = $i
@@ -25,10 +31,39 @@ for ($i = 1; $i -le $MaxBeats; $i++) {
     $testOutput = npm test 2>&1
     $testExit = $LASTEXITCODE
 
-    $line = "- beat $i : fixes=$after : test-exit=$testExit"
-    Add-Content -Path $progressFile -Value $line
+    $fixedThisLoop = $after - $before
+    if ($fixedThisLoop -gt 0) {
+        $idx = [int]$after - 1
+        $fixedName = $bugNames[$idx]
+        $fixedDesc = "fixed '$fixedName' (was '$($bugBefore[$idx])', now '$($bugAfter[$idx])')"
+    } else {
+        $fixedDesc = "no error fixed"
+    }
+
+    $remainingCount = $TotalBugs - [int]$after
+    if ($remainingCount -lt 0) { $remainingCount = 0 }
+
+    $remainingNames = @()
+    for ($j = [int]$after; $j -lt $TotalBugs; $j++) {
+        $remainingNames += "$($bugNames[$j]) (still '$($bugBefore[$j])')"
+    }
+
+    if ($remainingCount -eq 0) {
+        $remainingDesc = "none"
+    } else {
+        $remainingDesc = $remainingNames -join ", "
+    }
+
+    if ($testExit -eq 0) {
+        $verdict = "PASS"
+    } else {
+        $verdict = "still failing"
+    }
+
+    $line = "Loop $i : $fixedDesc : remaining=$remainingDesc : test says $verdict"
     Write-Output $line
-    $testOutput | Select-Object -Last 6
+    Add-Content -Path $progressFile -Value "- $line"
+    $beatLines += $line
 
     if ($testExit -eq 0) {
         $passed = $true
@@ -44,10 +79,26 @@ for ($i = 1; $i -le $MaxBeats; $i++) {
 $finishedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 if ($passed) {
-    Write-Output "PASSED on try $try (npm test returned 0)"
+    $result = "PASSED on try $try"
+    Write-Output $result
 } else {
-    Write-Output "STOPPED: no pass within $MaxBeats beats or no progress detected"
+    $result = "STOPPED after $try beats"
+    Write-Output $result
 }
 
-Add-Content -Path $progressFile -Value "Started: $startedAt"
-Add-Content -Path $progressFile -Value "Finished: $finishedAt"
+$existingSummaries = Get-ChildItem -Filter "SUMMARY*.md" -ErrorAction SilentlyContinue
+$nextSummary = $existingSummaries.Count + 1
+$summaryFile = "SUMMARY$nextSummary.md"
+
+$content = @(
+    "Run: $nextSummary"
+    "Started: $startedAt"
+    "Finished: $finishedAt"
+    "Result: $result"
+    "Beats:"
+) + ($beatLines | ForEach-Object { "  $_" })
+
+Set-Content -Path $summaryFile -Value $content
+
+Add-Content -Path $progressFile -Value "Run $nextSummary started: $startedAt"
+Add-Content -Path $progressFile -Value "Run $nextSummary finished: $finishedAt"
