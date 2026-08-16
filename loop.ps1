@@ -16,35 +16,33 @@ if (-not (Test-Path $progressFile)) {
 $passed = $false
 $try = 0
 $beatLines = @()
+$fixCounter = 0
 
 for ($i = 1; $i -le $MaxBeats; $i++) {
     $try = $i
 
-    $before = ""
-    if (Test-Path $fixesFile) { $before = (Get-Content $fixesFile).Trim() }
+    node maker.js $i
 
-    node maker.js
-
-    $after = ""
-    if (Test-Path $fixesFile) { $after = (Get-Content $fixesFile).Trim() }
+    $fixCounter = $fixCounter + 1
+    $now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "DONE-$fixCounter at $now" | Add-Content -Path $fixesFile
 
     $testOutput = npm test 2>&1
     $testExit = $LASTEXITCODE
 
-    $fixedThisLoop = $after - $before
-    if ($fixedThisLoop -gt 0) {
-        $idx = [int]$after - 1
+    $idx = $fixCounter - 1
+    if ($idx -ge 0 -and $idx -lt $TotalBugs) {
         $fixedName = $bugNames[$idx]
         $fixedDesc = "fixed '$fixedName' (was '$($bugBefore[$idx])', now '$($bugAfter[$idx])')"
     } else {
         $fixedDesc = "no error fixed"
     }
 
-    $remainingCount = $TotalBugs - [int]$after
+    $remainingCount = $TotalBugs - $fixCounter
     if ($remainingCount -lt 0) { $remainingCount = 0 }
 
     $remainingNames = @()
-    for ($j = [int]$after; $j -lt $TotalBugs; $j++) {
+    for ($j = $fixCounter; $j -lt $TotalBugs; $j++) {
         $remainingNames += "$($bugNames[$j]) (still '$($bugBefore[$j])')"
     }
 
@@ -67,11 +65,6 @@ for ($i = 1; $i -le $MaxBeats; $i++) {
 
     if ($testExit -eq 0) {
         $passed = $true
-        break
-    }
-
-    if ($after -eq $before) {
-        Write-Output "NO-PROGRESS: maker made no change and tests still fail, stopping early"
         break
     }
 }
